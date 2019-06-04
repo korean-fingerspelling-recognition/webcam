@@ -11,6 +11,8 @@ x = 0
 y = 0
 h = 1200
 w = 720
+image_size = 48
+dim = 4
 
 def nparray_as_image(nparray, mode='RGB'):
     return Image.fromarray(np.asarray(np.clip(nparray, 0, 255), dtype='uint8'), mode)
@@ -69,6 +71,34 @@ def draw_with_alpha(source_image, image_to_draw, coordinates):
         source_image[y:y + h, x:x + w, c] = image_array[:, :, c] * (image_array[:, :, 3] / 255.0) \
                                             + source_image[y:y + h, x:x + w, c] * (1.0 - image_array[:, :, 3] / 255.0)
 
+def convert_img(frame):
+
+    flags = tf.app.flags
+    FLAGS = flags.FLAGS
+
+    frame = cv2.resize(frame, (image_size, image_size))
+    convert_img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    low_boundary = np.array([0, 40, 30], dtype="uint8")
+    high_boundary = np.array([43, 255, 254], dtype = "uint8")
+
+    skinmask = cv2.inRange(convert_img, low_boundary, high_boundary)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    skinmask = cv2.erode(skinmask, kernel, iterations = 2)
+    skinmask = cv2.dilate(skinmask, kernel, iterations = 2)
+
+    low_boundary_2 = np.array([170, 80, 30], dtype="uint8")
+    high_boundary_2 = np.array([180, 255, 250], dtype="uint8")
+
+    skinmask2 = cv2.inRange(convert_img, low_boundary_2, high_boundary_2)
+    skinmask = cv2.addWeighted(skinmask, 0.5, skinmask2, 0.5, 0.0)
+    skinmask = cv2.medianBlur(skinmask, 5)
+    skin = cv2.bitwise_and(frame, frame, mask=skinmask)
+    frame = cv2.addWeighted(frame, 1.5, skin, -0.5, 0)
+    skin = cv2.bitwise_and(frame, frame, mask=skinmask)
+    h, s, v = cv2.split(skin)
+    return v # black except the part with hand
+
 
 if __name__ == '__main__':
     images = ['1_sheep','2_cat', '3_dog', '4_duck', '5_giraffe', '6_rain', '7_sun', '8_snow', '9_board']
@@ -89,7 +119,7 @@ if __name__ == '__main__':
     vc = cv2.VideoCapture(0)
 
     sess = tf.Session()
-    saver_gesture = tf.train.import_meta_graph(par.saved_path + str('501.meta'))
+    saver_gesture = tf.train.import_meta_graph('./Saved/' + str('501.meta'))
 
     saver_gesture.restore(sess, tf.train.latest_checkpoint('./Saved/'))
 
@@ -100,11 +130,11 @@ if __name__ == '__main__':
     X = graph_gesture.get_tensor_by_name('Input:0')
     #Y = graph.get_tensor_by_name('Target:0')
     # keep_prob = tf.placeholder(tf.float32)
-    keep_prob = graph_gesture.get_tensor_by_name('Placeholder:0')
+    #keep_prob = graph_gesture.get_tensor_by_name('Placeholder:0')
 
     # Get Ops
     prediction = graph_gesture.get_tensor_by_name('prediction:0')
-    logits = graph_gesture.get_tensor_by_name('logits:0')
+    #logits = graph_gesture.get_tensor_by_name('logits:0')
     accuracy = graph_gesture.get_tensor_by_name('accuracy:0')
 
     if vc.isOpened():
@@ -120,28 +150,17 @@ if __name__ == '__main__':
 
         '''
         hand_image = object_detecion(webcam_image)
-        hand_image = cv2.resize(64,64)
-        testImage = np.reshape(testImage, [-1, par.image_size, par.image_size, par.dim])
-        testImage = testImage.astype(np.float32)
-        testY = sess.run(prediction, feed_dict={X: testImage, keep_prob: 1.0})
-        prediction_hangle = int(np.argmax(testY));
         '''
-        #crop_img = webcam_image[100:300, 100:300]
-        crop_img = cv2.resize(webcam_image, (32,32) )
-        grey = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
-        value = (35, 35)
-        blurred = cv2.GaussianBlur(grey, value, 0)
-        _, thresh1 = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        # cv2.imshow('title',thresh1)
-        thresh1 = (thresh1 * 1.0) / 255
-        thresh1 = Image.fromarray(thresh1)
-        thresh1 = ImageOps.fit(thresh1, [par.image_size, par.image_size])
-        if par.threshold:
-            testImage = np.reshape(thresh1, [-1, par.image_size, par.image_size, 1])
-        else:
-            testImage = np.reshape(thresh1, [-1, par.image_size, par.image_size, 3])
+        hand_image = cv2.resize( webcam_image, (image_size, image_size))
+        convert = convert_img(webcam_image)
+        #mask_images.append(convert)
+        hand_image = np.reshape(hand_image, [-1, image_size, image_size, 3])
+        convert = np.reshape(convert, [-1, image_size, image_size, 1])
+        testImage = np.concatenate((hand_image, convert), axis = 3)
+
+        testImage = np.reshape(testImage, [-1, image_size, image_size, dim])
         testImage = testImage.astype(np.float32)
-        testY = sess.run(prediction, feed_dict={X: testImage, keep_prob: 1.0})
+        testY = sess.run(prediction, feed_dict={X: testImage})
         prediction_hangle = int(np.argmax(testY));
 
         print(prediction_hangle)
