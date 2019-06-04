@@ -1,14 +1,11 @@
-"""
-This module is the main module in this package. It loads emotion recognition model from a file,
-shows a webcam image, recognizes face and it's emotion and draw emotion on the image.
-"""
 from cv2 import WINDOW_NORMAL
-
 import cv2
-from face_detect import find_faces
 import numpy as np
-from PIL import Image
 import time
+import tensorflow as tf
+import parameters as par
+from PIL import ImageOps, Image
+import operator
 
 x = 0
 y = 0
@@ -35,7 +32,7 @@ def hangle_list_modify(prediction_hangle, list):
             if (prediction_hangle == 0) :
                 del list[len(list)-1]
 
-            elif (prediction_hangle != 0) :
+            elif (prediction_hangle != 0 and len(list) < 7) :
                 list.append(prediction_hangle)
     else :
         list.append(prediction_hangle)
@@ -79,21 +76,37 @@ if __name__ == '__main__':
     emoticons = _load_emoticons(images)
     hangles = _load_hangles(spellings)
 
-    # load model
-    #fisher_face = cv2.face.FisherFaceRecognizer_create()
-    #fisher_face.read('models/emotions_detection_model.xml')
-    # use learnt model
-
     window_name = 'WEBCAM (press ESC to exit)'
     window_size = (1200, 720)
     window_name = window_name
     update_time = 8
     cv2.namedWindow(window_name, WINDOW_NORMAL)
+
     if window_size:
         width, height = window_size
         cv2.resizeWindow(window_name, width, height)
 
     vc = cv2.VideoCapture(0)
+
+    sess = tf.Session()
+    saver_gesture = tf.train.import_meta_graph(par.saved_path + str('501.meta'))
+
+    saver_gesture.restore(sess, tf.train.latest_checkpoint('./Saved/'))
+
+    # Get Operations to restore
+    graph_gesture = sess.graph
+
+    # Get Input Graph
+    X = graph_gesture.get_tensor_by_name('Input:0')
+    #Y = graph.get_tensor_by_name('Target:0')
+    # keep_prob = tf.placeholder(tf.float32)
+    keep_prob = graph_gesture.get_tensor_by_name('Placeholder:0')
+
+    # Get Ops
+    prediction = graph_gesture.get_tensor_by_name('prediction:0')
+    logits = graph_gesture.get_tensor_by_name('logits:0')
+    accuracy = graph_gesture.get_tensor_by_name('accuracy:0')
+
     if vc.isOpened():
         read_value, webcam_image = vc.read()
     else:
@@ -105,21 +118,36 @@ if __name__ == '__main__':
 
     while read_value:
 
-        #prediction = model.predict(normalized_face)  # do prediction
-        list = [1, 8, 5, 7, 5, 5, 10]
-        prediction_hangle = 10
+        crop_img = webcam_image[100:300, 100:300]
+        grey = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
+        value = (35, 35)
+        blurred = cv2.GaussianBlur(grey, value, 0)
+        _, thresh1 = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        # cv2.imshow('title',thresh1)
+        thresh1 = (thresh1 * 1.0) / 255
+        thresh1 = Image.fromarray(thresh1)
+        thresh1 = ImageOps.fit(thresh1, [par.image_size, par.image_size])
+        if par.threshold:
+            testImage = np.reshape(thresh1, [-1, par.image_size, par.image_size, 1])
+        else:
+            testImage = np.reshape(thresh1, [-1, par.image_size, par.image_size, 3])
+        testImage = testImage.astype(np.float32)
+        testY = sess.run(prediction, feed_dict={X: testImage, keep_prob: 1.0})
+        prediction_hangle = int(np.argmax(testY));
+        print(prediction_hangle)
+        print("list" + str(list))
 
         list = hangle_list_modify(prediction_hangle, list)
-        prediction = hangle_list_to_image(list)
+        prediction_word = hangle_list_to_image(list)
 
-        if (prediction != 100 and a == 1) :
+        if (prediction_word != 100) :
 
             if ( flag == 0 ):
                 Max_Time = time.time() + 5
                 flag = 1
 
             while ( Max_Time >= time.time() ):
-                image_to_draw = emoticons[prediction]
+                image_to_draw = emoticons[prediction_word]
 
                 image_to_draw = image_to_draw.resize((h, w), Image.ANTIALIAS)
                 image_array = image_as_nparray(image_to_draw)
@@ -133,7 +161,6 @@ if __name__ == '__main__':
                 key = cv2.waitKey(update_time)
 
             list = []
-            a = 0
 
         else :
             image_board = emoticons[8]
@@ -148,7 +175,6 @@ if __name__ == '__main__':
         read_value, webcam_image = vc.read()
         key = cv2.waitKey(update_time)
         flag = 0
-        print(2)
         if key == 27:  # exit on ESC
             break
 
