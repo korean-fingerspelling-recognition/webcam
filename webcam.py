@@ -118,7 +118,16 @@ if __name__ == '__main__':
 
     while read_value:
 
-        crop_img = webcam_image[100:300, 100:300]
+        '''
+        hand_image = object_detecion(webcam_image)
+        hand_image = cv2.resize(64,64)
+        testImage = np.reshape(testImage, [-1, par.image_size, par.image_size, par.dim])
+        testImage = testImage.astype(np.float32)
+        testY = sess.run(prediction, feed_dict={X: testImage, keep_prob: 1.0})
+        prediction_hangle = int(np.argmax(testY));
+        '''
+        #crop_img = webcam_image[100:300, 100:300]
+        crop_img = cv2.resize(webcam_image, (32,32) )
         grey = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
         value = (35, 35)
         blurred = cv2.GaussianBlur(grey, value, 0)
@@ -134,6 +143,7 @@ if __name__ == '__main__':
         testImage = testImage.astype(np.float32)
         testY = sess.run(prediction, feed_dict={X: testImage, keep_prob: 1.0})
         prediction_hangle = int(np.argmax(testY));
+
         print(prediction_hangle)
         print("list" + str(list))
 
